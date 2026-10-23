@@ -1,4 +1,4 @@
-# Mobile Version Bump 📱
+# Mobile App Version Bump 📱
 
 [![My Skills](https://skillicons.dev/icons?i=githubactions,androidstudio,gradle,apple,swift,bash&perline=6)](https://skillicons.dev)
 

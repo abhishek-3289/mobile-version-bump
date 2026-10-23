@@ -1,4 +1,4 @@
-name: Mobile Version Bump
+name: Mobile App Version Bump
 description: Compute the next semantic version from git tags and write it, with a build number, into Android and iOS project files
 author: Abhishek Bansal
 
