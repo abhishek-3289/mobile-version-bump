@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: ShellCheck
+        run: shellcheck bump.sh tests/*.sh
+
+      - name: actionlint
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint -color .github/workflows/*.yml examples/*.yml
+
+  unit-tests:
+    name: Unit tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run tests with default bash
+        run: |
+          bash --version | head -n 1
+          bash tests/bump_test.sh
+
+      - name: Run tests with macOS system bash 3.2
+        if: runner.os == 'macOS'
+        run: |
+          /bin/bash --version | head -n 1
+          /bin/bash tests/bump_test.sh
+
+  integration:
+    name: Integration (${{ matrix.os }})
+    needs: unit-tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Copy fixtures
+        run: cp -R tests/fixtures "$RUNNER_TEMP/fixtures"
+
+      - name: Bump Gradle Kotlin DSL and project.pbxproj with an explicit version
+        id: explicit
+        uses: ./
+        with:
+          version: v2.5.0
+          build-number-offset: 1000
+          android-file: ${{ runner.temp }}/fixtures/build.gradle.kts
+          ios-file: ${{ runner.temp }}/fixtures/project.pbxproj
+
+      - name: Verify explicit version
+        env:
+          VERSION: ${{ steps.explicit.outputs.version }}
+          BUILD: ${{ steps.explicit.outputs.build-number }}
+          CHANGED: ${{ steps.explicit.outputs.changed-files }}
+          DIR: ${{ runner.temp }}/fixtures
+        run: |
+          [[ $VERSION == 2.5.0 ]] || { echo "::error::unexpected version '$VERSION'"; exit 1; }
+          [[ $BUILD == $((GITHUB_RUN_NUMBER + 1000)) ]] || { echo "::error::unexpected build-number '$BUILD'"; exit 1; }
+          [[ $CHANGED == "$DIR/build.gradle.kts $DIR/project.pbxproj" ]] || { echo "::error::unexpected changed-files '$CHANGED'"; exit 1; }
+          grep -qx '        versionName = "2.5.0"' "$DIR/build.gradle.kts" || { cat "$DIR/build.gradle.kts"; echo "::error::versionName not updated"; exit 1; }
+          grep -qx "        versionCode = $BUILD" "$DIR/build.gradle.kts" || { cat "$DIR/build.gradle.kts"; echo "::error::versionCode not updated"; exit 1; }
+          [[ $(grep -c 'MARKETING_VERSION = 2.5.0;' "$DIR/project.pbxproj") == 4 ]] || { cat "$DIR/project.pbxproj"; echo "::error::MARKETING_VERSION not updated everywhere"; exit 1; }
+          [[ $(grep -c "CURRENT_PROJECT_VERSION = $BUILD;" "$DIR/project.pbxproj") == 4 ]] || { cat "$DIR/project.pbxproj"; echo "::error::CURRENT_PROJECT_VERSION not updated everywhere"; exit 1; }
+
+      - name: Bump gradle.properties and Info.plist from tags
+        id: tags
+        uses: ./
+        with:
+          increment-type: minor
+          build-number-strategy: semver
+          android-file: ${{ runner.temp }}/fixtures/gradle.properties
+          ios-file: ${{ runner.temp }}/fixtures/Info.plist
+
+      - name: Verify tag based version
+        env:
+          VERSION: ${{ steps.tags.outputs.version }}
+          MAJOR: ${{ steps.tags.outputs.major }}
+          MINOR: ${{ steps.tags.outputs.minor }}
+          PATCH: ${{ steps.tags.outputs.patch }}
+          BUILD: ${{ steps.tags.outputs.build-number }}
+          DIR: ${{ runner.temp }}/fixtures
+        run: |
+          [[ $VERSION =~ ^[0-9]+\.[0-9]+\.0$ ]] || { echo "::error::unexpected version '$VERSION'"; exit 1; }
+          [[ $VERSION == "$MAJOR.$MINOR.$PATCH" ]] || { echo "::error::version parts do not match '$VERSION'"; exit 1; }
+          [[ $BUILD == $((MAJOR * 10000 + MINOR * 100 + PATCH)) ]] || { echo "::error::unexpected build-number '$BUILD'"; exit 1; }
+          grep -qx "VERSION_NAME=$VERSION" "$DIR/gradle.properties" || { cat "$DIR/gradle.properties"; echo "::error::VERSION_NAME not updated"; exit 1; }
+          grep -qx "VERSION_CODE=$BUILD" "$DIR/gradle.properties" || { cat "$DIR/gradle.properties"; echo "::error::VERSION_CODE not updated"; exit 1; }
+          grep -qx "	<string>$VERSION</string>" "$DIR/Info.plist" || { cat "$DIR/Info.plist"; echo "::error::CFBundleShortVersionString not updated"; exit 1; }
+          grep -qx "	<string>$BUILD</string>" "$DIR/Info.plist" || { cat "$DIR/Info.plist"; echo "::error::CFBundleVersion not updated"; exit 1; }
+
+      - name: Dry run against build.gradle and Config.xcconfig
+        id: dry
+        uses: ./
+        with:
+          dry-run: true
+          build-number-strategy: increment
+          android-file: ${{ runner.temp }}/fixtures/build.gradle
+          ios-file: ${{ runner.temp }}/fixtures/Config.xcconfig
+
+      - name: Verify dry run wrote nothing
+        env:
+          BUILD: ${{ steps.dry.outputs.build-number }}
+          CHANGED: ${{ steps.dry.outputs.changed-files }}
+          DIR: ${{ runner.temp }}/fixtures
+        run: |
+          [[ $BUILD == 42 ]] || { echo "::error::unexpected build-number '$BUILD'"; exit 1; }
+          [[ -z $CHANGED ]] || { echo "::error::dry run reported changed-files '$CHANGED'"; exit 1; }
+          cmp tests/fixtures/build.gradle "$DIR/build.gradle" || { echo "::error::build.gradle was modified"; exit 1; }
+          cmp tests/fixtures/Config.xcconfig "$DIR/Config.xcconfig" || { echo "::error::Config.xcconfig was modified"; exit 1; }
+
+      - name: Bump version.properties with an explicit build number
+        id: semver
+        uses: ./
+        with:
+          increment-type: patch
+          build-number: 7
+          android-file: ${{ runner.temp }}/fixtures/version.properties
+          android-version-code-key: version.code
+
+      - name: Verify version.properties
+        env:
+          VERSION: ${{ steps.semver.outputs.version }}
+          BUILD: ${{ steps.semver.outputs.build-number }}
+          DIR: ${{ runner.temp }}/fixtures
+        run: |
+          [[ $BUILD == 7 ]] || { echo "::error::unexpected build-number '$BUILD'"; exit 1; }
+          grep -qx "version.semver=$VERSION" "$DIR/version.properties" || { cat "$DIR/version.properties"; echo "::error::version.semver not updated"; exit 1; }
+          grep -qx "version.code=7" "$DIR/version.properties" || { cat "$DIR/version.properties"; echo "::error::version.code not written"; exit 1; }
+          grep -qx "version.prerelease=" "$DIR/version.properties" || { cat "$DIR/version.properties"; echo "::error::version.prerelease was dropped"; exit 1; }

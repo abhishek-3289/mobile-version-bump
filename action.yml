@@ -1,0 +1,94 @@
+name: Mobile Version Bump
+description: Compute the next semantic version from git tags and write it, with a build number, into Android and iOS project files
+author: Abhishek Bansal
+
+branding:
+  icon: smartphone
+  color: green
+
+inputs:
+  increment-type:
+    description: Part of the version to increment [patch, minor, major]
+    required: false
+    default: patch
+  version:
+    description: Explicit X.Y.Z version (optional leading v) that overrides the tag based calculation
+    required: false
+    default: ''
+  build-number:
+    description: Explicit build number that overrides build-number-strategy
+    required: false
+    default: ''
+  build-number-strategy:
+    description: How to compute the build number [run-number, increment, semver]
+    required: false
+    default: run-number
+  build-number-offset:
+    description: Number added to GITHUB_RUN_NUMBER by the run-number strategy
+    required: false
+    default: '0'
+  android-file:
+    description: Path to version.properties, build.gradle, build.gradle.kts or gradle.properties; empty skips Android
+    required: false
+    default: ''
+  android-version-name-key:
+    description: gradle.properties key holding the version name
+    required: false
+    default: VERSION_NAME
+  android-version-code-key:
+    description: Properties key holding the version code; gradle.properties falls back to VERSION_CODE, version.properties writes none when empty
+    required: false
+    default: ''
+  ios-file:
+    description: Path to an .xcconfig, project.pbxproj or XML Info.plist; empty skips iOS
+    required: false
+    default: ''
+  dry-run:
+    description: Set to true to compute and print the new values without writing any file
+    required: false
+    default: 'false'
+
+outputs:
+  latest-tag:
+    description: Highest X.Y.Z tag or v0.0.0 if none exists
+    value: ${{ steps.bump.outputs.latest_tag }}
+  previous-version:
+    description: Version of latest-tag without the v prefix
+    value: ${{ steps.bump.outputs.previous_version }}
+  version:
+    description: New version X.Y.Z
+    value: ${{ steps.bump.outputs.version }}
+  major:
+    description: New major version
+    value: ${{ steps.bump.outputs.major }}
+  minor:
+    description: New minor version
+    value: ${{ steps.bump.outputs.minor }}
+  patch:
+    description: New patch version
+    value: ${{ steps.bump.outputs.patch }}
+  build-number:
+    description: New build number
+    value: ${{ steps.bump.outputs.build_number }}
+  changed-files:
+    description: Space-separated list of files that were modified
+    value: ${{ steps.bump.outputs.changed_files }}
+
+runs:
+  using: composite
+  steps:
+    - name: Bump mobile version
+      id: bump
+      shell: bash
+      env:
+        INCREMENT_TYPE: ${{ inputs.increment-type }}
+        EXPLICIT_VERSION: ${{ inputs.version }}
+        BUILD_NUMBER: ${{ inputs.build-number }}
+        BUILD_NUMBER_STRATEGY: ${{ inputs.build-number-strategy }}
+        BUILD_NUMBER_OFFSET: ${{ inputs.build-number-offset }}
+        ANDROID_FILE: ${{ inputs.android-file }}
+        ANDROID_VERSION_NAME_KEY: ${{ inputs.android-version-name-key }}
+        ANDROID_VERSION_CODE_KEY: ${{ inputs.android-version-code-key }}
+        IOS_FILE: ${{ inputs.ios-file }}
+        DRY_RUN: ${{ inputs.dry-run }}
+      run: bash "$GITHUB_ACTION_PATH/bump.sh"

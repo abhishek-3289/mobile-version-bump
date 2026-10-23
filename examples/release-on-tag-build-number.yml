@@ -1,0 +1,62 @@
+name: Release build
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set version and build number
+        id: version
+        uses: abhishek-3289/mobile-version-bump@v1
+        with:
+          version: ${{ github.ref_name }}
+          build-number-strategy: run-number
+          build-number-offset: 1000
+          android-file: app/build.gradle.kts
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - name: Build release bundle
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD_NUMBER: ${{ steps.version.outputs.build-number }}
+        run: |
+          echo "Building $VERSION ($BUILD_NUMBER)"
+          ./gradlew bundleRelease
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set version and build number
+        id: version
+        uses: abhishek-3289/mobile-version-bump@v1
+        with:
+          version: ${{ github.ref_name }}
+          build-number-strategy: run-number
+          build-number-offset: 1000
+          ios-file: ios/Config.xcconfig
+
+      - name: Build app
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD_NUMBER: ${{ steps.version.outputs.build-number }}
+        run: |
+          echo "Building $VERSION ($BUILD_NUMBER)"
+          xcodebuild -project ios/App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
