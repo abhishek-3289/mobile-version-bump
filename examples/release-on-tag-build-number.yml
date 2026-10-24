@@ -16,7 +16,7 @@ jobs:
 
       - name: Set version and build number
         id: version
-        uses: abhishek-3289/mobile-version-bump@v1
+        uses: appshipkit/mobile-version-bump@v1
         with:
           version: ${{ github.ref_name }}
           build-number-strategy: run-number
@@ -45,7 +45,7 @@ jobs:
 
       - name: Set version and build number
         id: version
-        uses: abhishek-3289/mobile-version-bump@v1
+        uses: appshipkit/mobile-version-bump@v1
         with:
           version: ${{ github.ref_name }}
           build-number-strategy: run-number
