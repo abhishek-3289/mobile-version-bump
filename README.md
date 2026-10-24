@@ -16,7 +16,7 @@
 
       - name: Bump Android and iOS versions
         id: version
-        uses: abhishek-3289/mobile-version-bump@v1
+        uses: appshipkit/mobile-version-bump@v1
         with:
           increment-type: minor
           build-number-strategy: increment
